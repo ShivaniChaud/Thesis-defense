@@ -1,0 +1,209 @@
+import random
+import time
+from collections import deque
+import matplotlib.pyplot as plt
+
+# Random Graph Generator
+def generate_random_sfc_and_sg(num_sfc_nodes, num_sg_nodes, max_cpu, max_bandwidth):
+    sfc_nodes = [f'SFC{i}' for i in range(num_sfc_nodes)]
+    sfc_edges = {f'SFC{i}→SFC{j}': random.randint(1, max_bandwidth)
+                 for i in range(num_sfc_nodes) for j in range(i + 1, num_sfc_nodes)}
+    
+    sg_nodes = [f'SG{i}' for i in range(num_sg_nodes)]
+    sg_edges = {(f'SG{i}', f'SG{j}'): random.randint(1, max_bandwidth)
+                for i in range(num_sg_nodes) for j in range(i + 1, num_sg_nodes)}
+    
+    cpu_requirements = {f'SFC{i}': random.randint(1, max_cpu) for i in range(num_sfc_nodes)}
+    sg_cpu_availability = {f'SG{i}': random.randint(1, max_cpu) for i in range(num_sg_nodes)}
+    
+    return sfc_nodes, sfc_edges, sg_nodes, sg_edges, cpu_requirements, sg_cpu_availability
+
+# Criteria Checking Function
+def meets_criteria(mapping, cpu_requirements, sg_cpu_availability, bandwidth_requirements, sg_edges):
+    for sfc_node, sg_node in mapping.items():
+        if sg_cpu_availability[sg_node] < cpu_requirements[sfc_node]:
+            return False
+    
+    total_bandwidth = 0
+    for sfc_edge, bandwidth in bandwidth_requirements.items():
+        src_sfc, dst_sfc = sfc_edge.split('→')
+        src_sg = mapping.get(src_sfc)
+        dst_sg = mapping.get(dst_sfc)
+        if src_sg is None or dst_sg is None:
+            continue
+        if (src_sg, dst_sg) in sg_edges:
+            total_bandwidth += sg_edges[(src_sg, dst_sg)]
+        elif (dst_sg, src_sg) in sg_edges:
+            total_bandwidth += sg_edges[(dst_sg, src_sg)]
+        else:
+            return False  # No direct path in SG
+    
+    return total_bandwidth <= sum(bandwidth_requirements.values())
+
+# BFS Method
+def bfs_sfc_to_sg(sfc_nodes, sfc_edges, sg_nodes, sg_edges, cpu_requirements, sg_cpu_availability, bandwidth_requirements):
+    initial_mapping = {}
+    queue = deque([initial_mapping])
+    
+    while queue:
+        current_mapping = queue.popleft()
+        
+        if len(current_mapping) == len(sfc_nodes):
+            if meets_criteria(current_mapping, cpu_requirements, sg_cpu_availability, bandwidth_requirements, sg_edges):
+                return current_mapping
+        
+        unmapped_sfc_nodes = [node for node in sfc_nodes if node not in current_mapping]
+        if not unmapped_sfc_nodes:
+            continue
+        next_sfc_node = unmapped_sfc_nodes[0]
+        
+        for sg_node in sg_nodes:
+            if sg_node not in current_mapping.values():
+                new_mapping = current_mapping.copy()
+                new_mapping[next_sfc_node] = sg_node
+                queue.append(new_mapping)
+    
+    return None
+
+# Greedy Method
+def meets_cpu_requirements(mapping, cpu_requirements, sg_cpu_availability):
+    for sfc_node, sg_node in mapping.items():
+        if sg_cpu_availability[sg_node] < cpu_requirements[sfc_node]:
+            return False
+    return True
+
+def calculate_total_bandwidth(mapping, sfc_edges, sg_edges):
+    total_bandwidth = 0
+    for sfc_edge in sfc_edges:
+        src_sfc, dst_sfc = sfc_edge.split('→')
+        src_sg = mapping.get(src_sfc)
+        dst_sg = mapping.get(dst_sfc)
+        if src_sg is None or dst_sg is None:
+            continue
+        if (src_sg, dst_sg) in sg_edges:
+            total_bandwidth += sg_edges[(src_sg, dst_sg)]
+        elif (dst_sg, src_sg) in sg_edges:
+            total_bandwidth += sg_edges[(dst_sg, src_sg)]
+        else:
+            return float('inf')  # No direct path in SG
+    return total_bandwidth
+
+def greedy_sfc_to_sg(sfc_nodes, sfc_edges, sg_nodes, sg_edges, cpu_requirements, sg_cpu_availability):
+    mapping = {}
+    
+    for sfc_node in sfc_nodes:
+        best_sg_node = None
+        min_cost = float('inf')
+        
+        for sg_node in sg_nodes:
+            if sg_node in mapping.values():
+                continue
+            
+            mapping[sfc_node] = sg_node
+            
+            if meets_cpu_requirements(mapping, cpu_requirements, sg_cpu_availability):
+                cost = calculate_total_bandwidth(mapping, sfc_edges, sg_edges)
+                if cost < min_cost:
+                    min_cost = cost
+                    best_sg_node = sg_node
+            
+            del mapping[sfc_node]
+        
+        if best_sg_node is None:
+            return None
+        
+        mapping[sfc_node] = best_sg_node
+    
+    return mapping
+
+# DFS with Failure Recovery Method
+def dfs_sfc_to_sg(sfc_nodes, sfc_edges, sg_nodes, sg_edges, cpu_requirements, sg_cpu_availability, bandwidth_requirements):
+    initial_mapping = {}
+    stack = [initial_mapping]
+    
+    while stack:
+        current_mapping = stack.pop()
+        
+        if len(current_mapping) == len(sfc_nodes):
+            if meets_criteria(current_mapping, cpu_requirements, sg_cpu_availability, bandwidth_requirements, sg_edges):
+                return current_mapping
+        
+        unmapped_sfc_nodes = [node for node in sfc_nodes if node not in current_mapping]
+        if not unmapped_sfc_nodes:
+            continue
+        next_sfc_node = unmapped_sfc_nodes[0]
+        
+        for sg_node in sg_nodes:
+            if sg_node not in current_mapping.values():
+                new_mapping = current_mapping.copy()
+                new_mapping[next_sfc_node] = sg_node
+                stack.append(new_mapping)
+    
+    return None
+
+# Calculate Bandwidth Cost
+def calculate_bandwidth_cost(mapping, sfc_edges, sg_edges):
+    if mapping is None:
+        return float('inf')
+    total_bandwidth = 0
+    for sfc_edge in sfc_edges:
+        src_sfc, dst_sfc = sfc_edge.split('→')
+        src_sg = mapping[src_sfc]
+        dst_sg = mapping[dst_sfc]
+        if (src_sg, dst_sg) in sg_edges:
+            total_bandwidth += sg_edges[(src_sg, dst_sg)]
+        elif (dst_sg, src_sg) in sg_edges:
+            total_bandwidth += sg_edges[(dst_sg, src_sg)]
+        else:
+            return float('inf')  # No direct path in SG
+    return total_bandwidth
+
+# Run and Compare Methods
+def run_comparison(num_runs=100, num_sfc_nodes=5, num_sg_nodes=5, max_cpu=20, max_bandwidth=10):
+    bfs_times = []
+    greedy_times = []
+    dfs_times = []
+    
+    bfs_costs = []
+    greedy_costs = []
+    dfs_costs = []
+    
+    for _ in range(num_runs):
+        sfc_nodes, sfc_edges, sg_nodes, sg_edges, cpu_requirements, sg_cpu_availability = generate_random_sfc_and_sg(
+            num_sfc_nodes, num_sg_nodes, max_cpu, max_bandwidth)
+        
+        # BFS
+        start_time = time.time()
+        bfs_mapping = bfs_sfc_to_sg(sfc_nodes, sfc_edges, sg_nodes, sg_edges, cpu_requirements, sg_cpu_availability, sfc_edges)
+        bfs_times.append(time.time() - start_time)
+        bfs_costs.append(calculate_bandwidth_cost(bfs_mapping, sfc_edges, sg_edges))
+        
+        # Greedy
+        start_time = time.time()
+        greedy_mapping = greedy_sfc_to_sg(sfc_nodes, sfc_edges, sg_nodes, sg_edges, cpu_requirements, sg_cpu_availability)
+        greedy_times.append(time.time() - start_time)
+        greedy_costs.append(calculate_bandwidth_cost(greedy_mapping, sfc_edges, sg_edges))
+        
+        # DFS
+        start_time = time.time()
+        dfs_mapping = dfs_sfc_to_sg(sfc_nodes, sfc_edges, sg_nodes, sg_edges, cpu_requirements, sg_cpu_availability, sfc_edges)
+        dfs_times.append(time.time() - start_time)
+        dfs_costs.append(calculate_bandwidth_cost(dfs_mapping, sfc_edges, sg_edges))
+    
+    # Plotting the results
+    plt.figure(figsize=(14, 7))
+    
+    # Execution Time Comparison
+    plt.subplot(1, 2, 1)
+    plt.boxplot([bfs_times, greedy_times, dfs_times], labels=['BFS', 'Greedy', 'DFS'])
+    plt.title('Execution Time Comparison')
+    plt.ylabel('Time (seconds)')
+    
+    # Bandwidth Cost Comparison
+    plt.subplot(1, 2, 2)
+    plt.boxplot([bfs_costs, greedy_costs, dfs_costs], labels=['BFS', 'Greedy', 'DFS'])
+    plt.title('Bandwidth Cost Comparison')
+    plt.ylabel('Bandwidth Cost')
+    
+    plt.tight_layout()
+ &#8203;:citation[oaicite:0]{index=0}&#8203;
