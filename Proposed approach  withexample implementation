@@ -1,0 +1,65 @@
+def meets_criteria(mapping, cpu_requirements, sg_cpu_availability, bandwidth_requirements):
+    # Check if the CPU requirements and bandwidth requirements are met for the given mapping
+    for sfc_node, sg_node in mapping.items():
+        if sg_cpu_availability[sg_node] < cpu_requirements[sfc_node]:
+            return False
+    
+    total_bandwidth = 0
+    for sfc_edge, bandwidth in bandwidth_requirements.items():
+        src_sfc, dst_sfc = sfc_edge.split('→')
+        src_sg = mapping[src_sfc]
+        dst_sg = mapping[dst_sfc]
+        if (src_sg, dst_sg) in sg_edges:
+            total_bandwidth += sg_edges[(src_sg, dst_sg)]
+        elif (dst_sg, src_sg) in sg_edges:
+            total_bandwidth += sg_edges[(dst_sg, src_sg)]
+        else:
+            return False  # No direct path in SG
+    
+    if total_bandwidth > sum(bandwidth_requirements.values()):
+        return False
+    
+    return True
+
+def step_7_with_failure_recovery(current_mapping, cpu_requirements, sg_cpu_availability, bandwidth_requirements, dfs_paths):
+    if meets_criteria(current_mapping, cpu_requirements, sg_cpu_availability, bandwidth_requirements):
+        return current_mapping
+    else:
+        return backtrack_with_dfs(dfs_paths, cpu_requirements, sg_cpu_availability, bandwidth_requirements)
+
+def backtrack_with_dfs(dfs_paths, cpu_requirements, sg_cpu_availability, bandwidth_requirements):
+    for alternative_mapping in dfs_paths:
+        if meets_criteria(alternative_mapping, cpu_requirements, sg_cpu_availability, bandwidth_requirements):
+            return alternative_mapping
+    
+    return None  # If no valid mapping is found
+
+# Example data
+cpu_requirements = {'A': 10, 'B': 8, 'C': 12, 'D': 5}
+bandwidth_requirements = {
+    'A→B': 1, 'A→D': 3, 'B→C': 4, 'D→C': 2, 'B→D': 3
+}
+sg_cpu_availability = {'E': 15, 'F': 10, 'G': 18, 'H': 20}
+sg_edges = {
+    ('E', 'F'): 4, ('E', 'G'): 5, ('F', 'G'): 2,
+    ('F', 'H'): 6, ('G', 'H'): 3
+}
+
+# DFS results - for simplicity
+sfc_paths = [['A', 'B', 'C'], ['A', 'D', 'C'], ['A', 'B', 'D', 'C']]
+sg_paths = [
+    {'A': 'E', 'B': 'F', 'C': 'H'},  # Example mapping 1
+    {'A': 'E', 'D': 'G', 'C': 'H'},  # Example mapping 2
+    {'A': 'E', 'B': 'F', 'D': 'G', 'C': 'H'}  # Example mapping 3
+]
+
+# Choose the least bandwidth path (dummy choice for this example)
+least_bandwidth_path = sg_paths[1]
+
+# Validate CPU and bandwidth criteria with failure recovery
+current_mapping = least_bandwidth_path
+final_mapping = step_7_with_failure_recovery(
+    current_mapping, cpu_requirements, sg_cpu_availability, bandwidth_requirements, sg_paths
+)
+
+print("Final Mapping:", final_mapping)
